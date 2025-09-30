@@ -9,6 +9,7 @@
     });
 
     // --- 2. Настройки для Rezka ---
+    // === Настройки для Rezka ===
     Lampa.SettingsApi.add({
         component: 'rezka_mod',
         name: 'online_mod_rezka2_name',
@@ -25,15 +26,47 @@
         description: 'Пароль для HDRezka'
     });
 
+    // Кнопка "Войти"
     Lampa.SettingsApi.add({
         component: 'rezka_mod',
-        name: 'online_mod_proxy_rezka2_mirror',
-        type: 'toggle',
-        default: false,
-        description: 'Проксировать зеркало HDRezka'
+        name: 'rezka_login_button',
+        type: 'button',
+        label: 'Войти в HDRezka',
+        onClick: function () {
+            rezka2Login(function () {
+                Lampa.Noty.show('✅ Успешный вход в HDRezka');
+            }, function () {
+                Lampa.Noty.show('❌ Ошибка входа в HDRezka');
+            });
+        }
     });
 
-    // --- 3. Авторизация Rezka ---
+    // Кнопка "Выйти"
+    Lampa.SettingsApi.add({
+        component: 'rezka_mod',
+        name: 'rezka_logout_button',
+        type: 'button',
+        label: 'Выйти из HDRezka',
+        onClick: function () {
+            rezka2Logout(function () {
+                Lampa.Noty.show('🔓 Вышли из HDRezka');
+            });
+        }
+    });
+
+    // Индикатор статуса (авторизован / нет)
+    Lampa.SettingsApi.add({
+        component: 'rezka_mod',
+        name: 'rezka_status',
+        type: 'static',
+        label: function () {
+            return Lampa.Storage.get('online_mod_rezka2_status', 'false') === 'true'
+                ? '🟢 Авторизован'
+                : '🔴 Не авторизован';
+        }
+    });
+
+    // === Функции логина/логаута ===
     function rezka2Login(success, error) {
         var host = Utils.rezka2Mirror();
         var url = host + '/ajax/login/';
@@ -76,75 +109,5 @@
             withCredentials: true
         });
     }
-
-    // --- 4. Подготовка запроса через зеркало/прокси ---
-    function rezka2FillCookie(opts, success, error) {
-        var prox = Utils.proxy('rezka2');
-        var proxy_mirror = Lampa.Storage.field('online_mod_proxy_rezka2_mirror') === true;
-        var host = (!prox && !proxy_mirror) ? 'https://rezka.ag' : Utils.rezka2Mirror();
-
-        opts.url = host + opts.url;
-        opts.withCredentials = true;
-
-        if (prox) opts.url = prox + opts.url;
-
-        if (success) success();
-    }
-
-    // --- 5. Поиск ---
-    function search(query, callback) {
-        var opts = { url: '/search/?do=search&subaction=search&q=' + encodeURIComponent(query), headers: {} };
-        rezka2FillCookie(opts, function () {
-            network.silent(opts.url, function (html) {
-                var results = [];
-                var doc = Lampa.Parser.makeDOM(html);
-                doc.querySelectorAll('.b-content__inline_item').forEach(function (item) {
-                    var title = item.querySelector('.b-content__inline_item-link a').textContent.trim();
-                    var link = item.querySelector('.b-content__inline_item-link a').getAttribute('href');
-                    var poster = item.querySelector('img').getAttribute('src');
-                    results.push({ title: title, url: link, poster: poster });
-                });
-                callback(results);
-            }, function () {
-                callback([]);
-            }, false, { withCredentials: true });
-        }, function () {
-            callback([]);
-        });
-    }
-
-    // --- 6. Получение видео ---
-    function movie(data, callback) {
-        var path = data.url.replace(/^https?:\/\/[^/]+/, '');
-        var opts = { url: path, headers: {} };
-
-        rezka2FillCookie(opts, function () {
-            network.silent(opts.url, function (html) {
-                var match = html.match(/initCDNSeriesEvents\((.*?)\)/) || html.match(/initCDNMoviesEvents\((.*?)\)/);
-                if (match) {
-                    try {
-                        var json = JSON.parse(match[1].replace(/'/g, '"'));
-                        callback([{ title: 'Rezka', file: json.url }]);
-                    } catch (e) {
-                        callback([]);
-                    }
-                } else {
-                    callback([]);
-                }
-            }, function () {
-                callback([]);
-            }, false, { withCredentials: true });
-        }, function () {
-            callback([]);
-        });
-    }
-
-    // --- 7. Регистрируем источник Rezka ---
-    Lampa.Source.add('rezka_mod', {
-        title: 'Rezka',
-        search: search,
-        movie: movie,
-        tv: movie
-    });
 
 })();
