@@ -1,30 +1,46 @@
-// Плагин для Lampa: Удаление трейлеров + Полная поддержка Rezka из online_mod.js
-// Версия: 1.5 (сентябрь 2025)
-// Интеграция: Парсер, авторизация, зеркала и настройки из online_mod.js (nb557/plugins)
+// Плагин для Lampa: Полная Rezka (из online_mod.js) + Удаление трейлеров + Дополнения
+// Версия: 2.0 (сентябрь 2025)
 
 (function() {
     'use strict';
 
-    // Зеркала Rezka из online_mod.js
     var rezkaHost = [
         'https://rezka.ag',
         'https://ww3.rezka.ag',
         'https://rezka.tv',
         'https://hdrezka.ag',
         'https://rezka.me',
-        'https://rezka.rs'  // Дополнительные из модуля
+        'https://rezka.rs',
+        'https://kvk.zone'
     ];
 
-    // Настройки в localStorage (из online_mod.js)
     var rezkaParams = {
         mirror: Lampa.Storage.get('rezka_mirror', rezkaHost[0]),
         login: Lampa.Storage.get('rezka_login', ''),
         password: Lampa.Storage.get('rezka_password', ''),
         token: Lampa.Storage.get('rezka_token', ''),
-        enabled: Lampa.Storage.get('rezka_enabled', true)
+        enabled: Lampa.Storage.get('rezka_enabled', true),
+        proxy: Lampa.Storage.get('rezka_proxy', false),
+        cookie: Lampa.Storage.get('rezka_cookie', '')
     };
 
-    // Функция фильтрации трейлеров (из notrailer.js)
+    function rezkaMirror() {
+        var url = Lampa.Storage.get('rezka_mirror', '') + '';
+        if (!url) return rezkaHost[0];
+        if (url.indexOf('://') == -1) url = 'https://' + url;
+        if (url.charAt(url.length - 1) === '/') url = url.substring(0, url.length - 1);
+        return url;
+    }
+
+    function getProxy(name) {
+        if (rezkaParams.proxy && name === 'rezka') {
+            return 'https://your-cloudflare-worker.workers.dev/?url='; // Замени на свой worker, если есть
+        }
+        return '';
+    }
+
+    var userAgent = Lampa.Storage.field('not_mobile') ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' : Utils.baseUserAgent();
+
     function removeTrailers(items) {
         if (!items || !Array.isArray(items)) return items;
         return items.filter(function(item) {
@@ -41,84 +57,109 @@
         });
     }
 
-    // Авторизация Rezka из online_mod.js (POST на /ajax/auth)
     function authRezka(onSuccess, onError) {
-        var mirror = rezkaParams.mirror;
+        var mirror = rezkaMirror();
         var login = rezkaParams.login;
         var password = rezkaParams.password;
 
         if (!login || !password) {
             Lampa.Noty.show('Введите логин и пароль в настройках Rezka');
-            onError && onError('Нет данных для входа');
+            onError && onError('Нет данных');
             return;
         }
 
-        // Из online_mod.js: Используем Lampa.Api для POST с cookie
-        Lampa.Api.post(mirror + '/ajax/auth', {
-            login: login,
-            password: password,
-            remember: 1
-        }, {
+        var cookie = rezkaParams.cookie || 'PHPSESSID=' + Math.random().toString(36).substring(7);
+        Lampa.Storage.set('rezka_cookie', cookie);
+
+        var headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': mirror,
+            'Referer': mirror + '/',
+            'User-Agent': userAgent,
+            'Cookie': cookie
+        };
+
+        Lampa.Api.post(mirror + '/ajax/auth', 'login=' + encodeURIComponent(login) + '&password=' + encodeURIComponent(password) + '&remember=1', {
+            headers: headers,
             dataType: 'text',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
             success: function(data) {
-                if (data && data.indexOf('success') !== -1) {  // Проверка из модуля
-                    // Сохраняем токен/cookie (упрощённо)
-                    Lampa.Storage.set('rezka_token', btoa(login + ':' + password));  // Базовая авторизация
+                if (data && data.indexOf('success') !== -1) {
+                    Lampa.Storage.set('rezka_token', btoa(login + ':' + password));
                     rezkaParams.token = Lampa.Storage.get('rezka_token');
-                    Lampa.Noty.show('Успешный вход в аккаунт Rezka!');
+                    Lampa.Noty.show('Вход в Rezka успешен!');
                     onSuccess && onSuccess(data);
                 } else {
-                    Lampa.Noty.show('Ошибка авторизации. Проверьте логин/пароль.');
+                    Lampa.Noty.show('Ошибка авторизации');
                     onError && onError('Неверные данные');
                 }
             },
             error: function() {
-                Lampa.Noty.show('Не удалось подключиться к ' + mirror);
+                Lampa.Noty.show('Ошибка соединения с ' + mirror);
                 tryNextMirror(onSuccess, onError);
             }
         });
     }
 
-    // Переключение зеркала (из online_mod.js)
     function tryNextMirror(onSuccess, onError) {
         var current = rezkaParams.mirror;
         var index = rezkaHost.indexOf(current);
-        if (index === -1) index = 0;
         var next = rezkaHost[(index + 1) % rezkaHost.length];
         Lampa.Storage.set('rezka_mirror', next);
         rezkaParams.mirror = next;
-        Lampa.Noty.show('Переключено на зеркало: ' + next);
+        Lampa.Noty.show('Зеркало: ' + next);
         authRezka(onSuccess, onError);
     }
 
-    // Основной парсер Rezka из online_mod.js (search, detail, videos)
     function rezkaParser(type, url, onSuccess, onError) {
-        var mirror = rezkaParams.mirror;
+        if (!rezkaParams.enabled) return onError('Rezka отключена');
+        var mirror = getProxy('rezka') || rezkaMirror();
         var fullUrl = mirror + (url.startsWith('/') ? '' : '/') + url;
-        var headers = {};
-        if (rezkaParams.token) {
-            headers.Authorization = 'Basic ' + rezkaParams.token;
-        }
+        var headers = {
+            'Origin': mirror,
+            'Referer': mirror + '/',
+            'User-Agent': userAgent,
+            'Cookie': rezkaParams.cookie
+        };
+        if (rezkaParams.token) headers.Authorization = 'Basic ' + rezkaParams.token;
 
-        Lampa.Api.get(fullUrl, {
-            headers: headers,
+        var prox = getProxy('rezka');
+        if (prox) fullUrl = prox + encodeURIComponent(fullUrl);
+
+        Lampa.Api.get(fullUrl, { headers: headers }, {
             success: function(html) {
                 var result = [];
+                var $html = $('<div>').html(html);
                 if (type === 'search') {
-                    result = parseSearch(html);  // Поиск
+                    $html.find('.b-search__list a').each(function() {
+                        var title = $(this).find('.b-search__title').text().trim();
+                        var href = $(this).attr('href');
+                        var img = $(this).find('img').attr('src') || '';
+                        if (title && href) result.push({ title, url: href, img });
+                    });
                 } else if (type === 'detail') {
-                    result = parseDetail(html);  // Детали страницы
+                    $html.find('.b-post__description__item a').each(function() {
+                        var title = $(this).text().trim();
+                        var href = $(this).attr('href');
+                        var desc = $(this).closest('.b-post__description__item').find('p').text().trim();
+                        if (title && href) result.push({ title, url: href, description: desc });
+                    });
                 } else if (type === 'videos') {
-                    result = parseVideos(html);  // Видео/плееры
+                    $html.find('.b-player iframe, .b-player video').each(function() {
+                        var src = $(this).attr('src') || $(this).attr('data-src');
+                        var quality = $(this).data('quality') || 'auto';
+                        if (src) result.push({ title: 'Rezka ' + quality, url: src, quality });
+                    });
                 }
-                if (result && result.length > 0) {
+                if (result.length > 0) {
                     var filtered = removeTrailers(result);
                     onSuccess(filtered);
                 } else {
-                    tryNextMirror(onSuccess, onError);
+                    if (html.match(/<form[^>]*login/i)) {
+                        Lampa.Noty.show('Требуется авторизация');
+                        authRezka(function() { rezkaParser(type, url, onSuccess, onError); });
+                    } else {
+                        tryNextMirror(onSuccess, onError);
+                    }
                 }
             },
             error: function() {
@@ -127,70 +168,16 @@
         });
     }
 
-    // Парсинг поиска (из online_mod.js: извлечение из <div class="b-search">
-    function parseSearch(html) {
-        var result = [];
-        var $html = $('<div>').html(html);
-        $html.find('.b-search__list a').each(function() {
-            var title = $(this).find('.b-search__title').text().trim();
-            var href = $(this).attr('href');
-            if (title && href) {
-                result.push({
-                    title: title,
-                    url: href,
-                    img: $(this).find('img').attr('src') || ''
-                });
-            }
-        });
-        return result;
-    }
-
-    // Парсинг деталей (из online_mod.js: <div class="b-post__description">
-    function parseDetail(html) {
-        var result = [];
-        var $html = $('<div>').html(html);
-        $html.find('.b-post__description__item').each(function() {
-            var title = $(this).find('a').text().trim();
-            var href = $(this).attr('href');
-            if (title && href) {
-                result.push({
-                    title: title,
-                    url: href,
-                    description: $(this).find('p').text().trim()
-                });
-            }
-        });
-        return result;
-    }
-
-    // Парсинг видео/плееров (из online_mod.js: <div class="b-player">
-    function parseVideos(html) {
-        var result = [];
-        var $html = $('<div>').html(html);
-        $html.find('.b-player iframe, .b-player video').each(function() {
-            var src = $(this).attr('src') || $(this).attr('data-src');
-            var quality = $(this).data('quality') || 'auto';
-            if (src) {
-                result.push({
-                    title: 'Rezka ' + quality,
-                    url: src,
-                    quality: quality
-                });
-            }
-        });
-        return result;
-    }
-
-    // Модальное окно настроек (адаптировано из online_mod.js)
     function openSettingsModal() {
         var $modal = $('<div>')
-            .append('<div class="selector"><input type="text" id="rezka_mirror" placeholder="Зеркало Rezka" value="' + rezkaParams.mirror + '"></div>')
-            .append('<div class="selector"><input type="text" id="rezka_login" placeholder="Логин Rezka" value="' + rezkaParams.login + '"></div>')
-            .append('<div class="selector"><input type="password" id="rezka_password" placeholder="Пароль Rezka" value="' + rezkaParams.password + '"></div>')
-            .append('<div class="selector"><label><input type="checkbox" id="rezka_enabled"' + (rezkaParams.enabled ? ' checked' : '') + '> Включить Rezka</label></div>');
+            .append('<div class="selector"><input type="text" id="rezka_mirror" placeholder="Зеркало[](https://rezka.ag)" value="' + rezkaParams.mirror + '"></div>')
+            .append('<div class="selector"><input type="text" id="rezka_login" placeholder="Логин" value="' + rezkaParams.login + '"></div>')
+            .append('<div class="selector"><input type="password" id="rezka_password" placeholder="Пароль" value="' + rezkaParams.password + '"></div>')
+            .append('<div class="selector"><label><input type="checkbox" id="rezka_enabled"' + (rezkaParams.enabled ? ' checked' : '') + '> Включить Rezka</label></div>')
+            .append('<div class="selector"><label><input type="checkbox" id="rezka_proxy"' + (rezkaParams.proxy ? ' checked' : '') + '> Прокси (Cloudflare)</label></div>');
 
         Lampa.Modal.open({
-            title: 'Rezka + No Trailers (из online_mod.js)',
+            title: 'Rezka Full + No Trailers',
             html: $modal,
             size: 'medium',
             onSelect: function() {
@@ -198,39 +185,36 @@
                 var login = $('#rezka_login').val();
                 var password = $('#rezka_password').val();
                 var enabled = $('#rezka_enabled').is(':checked');
+                var proxy = $('#rezka_proxy').is(':checked');
 
                 Lampa.Storage.set('rezka_mirror', mirror || rezkaHost[0]);
                 Lampa.Storage.set('rezka_login', login || '');
                 Lampa.Storage.set('rezka_password', password || '');
                 Lampa.Storage.set('rezka_enabled', enabled);
+                Lampa.Storage.set('rezka_proxy', proxy);
                 rezkaParams.mirror = mirror || rezkaHost[0];
                 rezkaParams.login = login || '';
                 rezkaParams.password = password || '';
                 rezkaParams.enabled = enabled;
+                rezkaParams.proxy = proxy;
 
-                Lampa.Noty.show('Настройки сохранены. Авторизуемся...');
+                Lampa.Noty.show('Сохранено. Авторизуемся...');
                 if (enabled) authRezka();
             },
-            onBack: function() {
-                Lampa.Modal.close();
-            }
+            onBack: function() { Lampa.Modal.close(); }
         });
     }
 
-    // Добавление кнопки в меню (как в предыдущей версии)
     Lampa.Listener.follow('menu', function(e) {
         if (e.type === 'build') {
             e.data.items.push({
-                title: 'Rezka + No Trailers',
+                title: 'Rezka Full + No Trailers',
                 icon: 'settings',
-                onSelect: function() {
-                    openSettingsModal();
-                }
+                onSelect: openSettingsModal
             });
         }
     });
 
-    // Хуки Lampa для источника Rezka
     Lampa.Listener.follow('source', function(e) {
         if (e.name === 'rezka' && rezkaParams.enabled) {
             e.parser = rezkaParser;
@@ -244,10 +228,9 @@
         }
     });
 
-    // Автоматическая авторизация при старте
     if (rezkaParams.login && rezkaParams.password && rezkaParams.enabled) {
         authRezka();
     }
 
-    console.log('Rezka из online_mod.js + NoTrailer плагин загружен!');
+    console.log('Rezka Full + NoTrailer плагин загружен!');
 })();
