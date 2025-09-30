@@ -1,6 +1,6 @@
 // Плагин для Lampa: Удаление трейлеров + Вход в аккаунт Rezka с выбором зеркала
-// Версия: 1.3 (сентябрь 2025)
-// Подготовлено для интеграции с online_mod.js
+// Версия: 1.4 (сентябрь 2025)
+// Исправлено: Настройки через модальное окно вместо settings
 
 (function() {
     'use strict';
@@ -39,7 +39,7 @@
         });
     }
 
-    // Авторизация в Rezka (предположительно как в online_mod.js)
+    // Авторизация в Rezka
     function loginRezka(onSuccess, onError) {
         var mirror = Lampa.Storage.get('rezka_mirror', defaultMirrors[0]);
         var login = Lampa.Storage.get('rezka_login', '');
@@ -51,7 +51,6 @@
             return;
         }
 
-        // Эндпоинт авторизации (адаптируй, если в online_mod.js другой)
         var authUrl = mirror + '/ajax/login/';
         Lampa.Api.post(authUrl, {
             login: login,
@@ -86,7 +85,7 @@
         loginRezka();
     }
 
-    // Парсер для Rezka (заглушка, замени на код из online_mod.js)
+    // Парсер для Rezka (заглушка, замени на код из online_mod.js, если есть)
     function rezkaParser(url, onSuccess, onError) {
         var mirror = Lampa.Storage.get('rezka_mirror', defaultMirrors[0]);
         var fullUrl = mirror + (url.startsWith('/') ? '' : '/') + url;
@@ -109,62 +108,56 @@
         });
     }
 
-    // Парсер данных Rezka (заглушка, замени на логику из online_mod.js)
+    // Парсер данных Rezka (заглушка)
     function parseRezkaData(data) {
-        // Если в online_mod.js есть парсер, вставь его сюда
-        // Пример: парсинг HTML или JSON для извлечения {title, url, ...}
+        // Замени на реальный парсер из online_mod.js, если доступен
         return [];
     }
 
-    // Настройки через Listener (исправление ошибки Lampa.Settings.add)
-    Lampa.Listener.follow('settings', function(e) {
+    // Добавление кнопки в главное меню для открытия настроек
+    Lampa.Listener.follow('menu', function(e) {
         if (e.type === 'build') {
-            var section = {
-                name: 'rezka_plugin',
+            e.data.items.push({
                 title: 'Rezka + No Trailers',
-                items: [
-                    {
-                        type: 'input',
-                        name: 'rezka_mirror',
-                        title: 'Зеркало Rezka',
-                        value: storage.mirror,
-                        placeholder: 'Введите URL, например, https://rezka.ag'
-                    },
-                    {
-                        type: 'input',
-                        name: 'rezka_login',
-                        title: 'Логин Rezka',
-                        value: storage.login,
-                        placeholder: 'Ваш логин'
-                    },
-                    {
-                        type: 'input',
-                        name: 'rezka_password',
-                        title: 'Пароль Rezka',
-                        value: storage.password,
-                        placeholder: 'Ваш пароль',
-                        password: true
-                    }
-                ]
-            };
-
-            e.data.sections.push(section);
-
-            Lampa.Listener.follow('settings_change', function(change) {
-                if (change.section === 'rezka_plugin') {
-                    var values = change.values;
-                    Lampa.Storage.set('rezka_mirror', values.rezka_mirror || defaultMirrors[0]);
-                    Lampa.Storage.set('rezka_login', values.rezka_login || '');
-                    Lampa.Storage.set('rezka_password', values.rezka_password || '');
-                    storage.mirror = values.rezka_mirror || defaultMirrors[0];
-                    storage.login = values.rezka_login || '';
-                    storage.password = values.rezka_password || '';
-                    Lampa.Noty.show('Настройки сохранены. Проверяем авторизацию...');
-                    loginRezka();
+                icon: 'settings',
+                onSelect: function() {
+                    openSettingsModal();
                 }
             });
         }
     });
+
+    // Модальное окно для настроек
+    function openSettingsModal() {
+        var $modal = $('<div>')
+            .append('<div class="selector"><input type="text" id="rezka_mirror" placeholder="Зеркало Rezka (например, https://rezka.ag)" value="' + storage.mirror + '"></div>')
+            .append('<div class="selector"><input type="text" id="rezka_login" placeholder="Логин Rezka" value="' + storage.login + '"></div>')
+            .append('<div class="selector"><input type="password" id="rezka_password" placeholder="Пароль Rezka" value="' + storage.password + '"></div>');
+
+        Lampa.Modal.open({
+            title: 'Rezka + No Trailers',
+            html: $modal,
+            size: 'medium',
+            onSelect: function() {
+                var mirror = $('#rezka_mirror').val();
+                var login = $('#rezka_login').val();
+                var password = $('#rezka_password').val();
+
+                Lampa.Storage.set('rezka_mirror', mirror || defaultMirrors[0]);
+                Lampa.Storage.set('rezka_login', login || '');
+                Lampa.Storage.set('rezka_password', password || '');
+                storage.mirror = mirror || defaultMirrors[0];
+                storage.login = login || '';
+                storage.password = password || '';
+
+                Lampa.Noty.show('Настройки сохранены. Проверяем авторизацию...');
+                loginRezka();
+            },
+            onBack: function() {
+                Lampa.Modal.close();
+            }
+        });
+    }
 
     // Хуки Lampa
     Lampa.Listener.follow('app', function(e) {
