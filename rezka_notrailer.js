@@ -1,14 +1,14 @@
 (function () {
-    // --- 1. Удаление трейлеров ---
+    'use strict';
+
+    // --- 1. Удаляем трейлеры из карточек ---
     Lampa.Listener.follow('full', function (e) {
-        if (e.type === 'complite' && e.data && e.data.results) {
-            e.data.results = e.data.results.filter(function (item) {
-                return item.name.toLowerCase().indexOf('трейлер') === -1;
-            });
+        if (e.type === 'complite') {
+            e.object.activity.render().find('.view--trailer').remove();
         }
     });
 
-    // --- 2. Настройки Rezka ---
+    // --- 2. Настройки для Rezka ---
     Lampa.SettingsApi.add({
         component: 'rezka_mod',
         name: 'online_mod_rezka2_name',
@@ -33,7 +33,7 @@
         description: 'Проксировать зеркало HDRezka'
     });
 
-    // --- 3. Авторизация ---
+    // --- 3. Авторизация Rezka ---
     function rezka2Login(success, error) {
         var host = Utils.rezka2Mirror();
         var url = host + '/ajax/login/';
@@ -77,7 +77,7 @@
         });
     }
 
-    // --- 4. Запросы через зеркало/прокси ---
+    // --- 4. Подготовка запроса через зеркало/прокси ---
     function rezka2FillCookie(opts, success, error) {
         var prox = Utils.proxy('rezka2');
         var proxy_mirror = Lampa.Storage.field('online_mod_proxy_rezka2_mirror') === true;
@@ -91,12 +91,9 @@
         if (success) success();
     }
 
-    // --- 5. Поиск по Rezka ---
+    // --- 5. Поиск ---
     function search(query, callback) {
-        var opts = {
-            url: '/search/?do=search&subaction=search&q=' + encodeURIComponent(query),
-            headers: {}
-        };
+        var opts = { url: '/search/?do=search&subaction=search&q=' + encodeURIComponent(query), headers: {} };
         rezka2FillCookie(opts, function () {
             network.silent(opts.url, function (html) {
                 var results = [];
@@ -116,7 +113,7 @@
         });
     }
 
-    // --- 6. Получение ссылок (фильмы/сериалы) ---
+    // --- 6. Получение видео ---
     function movie(data, callback) {
         var path = data.url.replace(/^https?:\/\/[^/]+/, '');
         var opts = { url: path, headers: {} };
@@ -142,7 +139,7 @@
         });
     }
 
-    // --- 7. Регистрация источника Rezka ---
+    // --- 7. Регистрируем источник Rezka ---
     Lampa.Source.add('rezka_mod', {
         title: 'Rezka',
         search: search,
