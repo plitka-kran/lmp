@@ -1,11 +1,11 @@
 // Плагин для Lampa: Удаление трейлеров + Вход в аккаунт Rezka с выбором зеркала
-// Версия: 1.2 (сентябрь 2025)
-// Исправлено: Совместимость с API настроек
+// Версия: 1.3 (сентябрь 2025)
+// Подготовлено для интеграции с online_mod.js
 
 (function() {
     'use strict';
 
-    // Конфиг зеркал Rezka по умолчанию
+    // Конфиг зеркал Rezka
     var defaultMirrors = [
         'https://rezka.ag',
         'https://ww3.rezka.ag',
@@ -39,7 +39,7 @@
         });
     }
 
-    // Авторизация в Rezka
+    // Авторизация в Rezka (предположительно как в online_mod.js)
     function loginRezka(onSuccess, onError) {
         var mirror = Lampa.Storage.get('rezka_mirror', defaultMirrors[0]);
         var login = Lampa.Storage.get('rezka_login', '');
@@ -51,6 +51,7 @@
             return;
         }
 
+        // Эндпоинт авторизации (адаптируй, если в online_mod.js другой)
         var authUrl = mirror + '/ajax/login/';
         Lampa.Api.post(authUrl, {
             login: login,
@@ -85,7 +86,7 @@
         loginRezka();
     }
 
-    // Парсер для Rezka
+    // Парсер для Rezka (заглушка, замени на код из online_mod.js)
     function rezkaParser(url, onSuccess, onError) {
         var mirror = Lampa.Storage.get('rezka_mirror', defaultMirrors[0]);
         var fullUrl = mirror + (url.startsWith('/') ? '' : '/') + url;
@@ -108,13 +109,14 @@
         });
     }
 
-    // Заглушка для парсинга Rezka
+    // Парсер данных Rezka (заглушка, замени на логику из online_mod.js)
     function parseRezkaData(data) {
-        // Замени на реальный парсер из nb557/plugins
+        // Если в online_mod.js есть парсер, вставь его сюда
+        // Пример: парсинг HTML или JSON для извлечения {title, url, ...}
         return [];
     }
 
-    // Добавление настроек через Listener (альтернатива Settings.add)
+    // Настройки через Listener (исправление ошибки Lampa.Settings.add)
     Lampa.Listener.follow('settings', function(e) {
         if (e.type === 'build') {
             var section = {
@@ -146,10 +148,8 @@
                 ]
             };
 
-            // Добавляем секцию настроек
             e.data.sections.push(section);
 
-            // Обработчик изменения настроек
             Lampa.Listener.follow('settings_change', function(change) {
                 if (change.section === 'rezka_plugin') {
                     var values = change.values;
